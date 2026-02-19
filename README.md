@@ -74,7 +74,7 @@ Um array fixo armazena as últimas ações como mensagens:
 
 ## Como compilar e executar
 
-### Opção A) Usando Makefile (recomendado)
+### Opção A) Usando Makefile
 Na pasta do projeto:
 bash
 make
