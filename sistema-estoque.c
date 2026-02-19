@@ -330,3 +330,306 @@ static void liberar_estoque(ProdutoNode **ponta) {
     }
     *ponta = NULL;
 }
+
+// Operações do Sistema 
+
+static void cadastrar_produto(ProdutoNode **head, Stack *undo) {
+    Produto p;
+    p.id = read_int("ID do produto: ");
+    read_line("Nome: ", p.nome, sizeof(p.nome));
+    p.qtd = read_int("Quantidade inicial: ");
+    p.preco = read_double("Preco (ex: 19.90): ");
+
+    if (p.id <= 0 || p.qtd < 0 || p.preco < 0 || strlen(p.nome) == 0) {
+        printf("Dados invalidos.\n");
+        return;
+    }
+
+    if (!inserir_produto_o1_sem_duplicado(head, p)) return;
+
+    Operacao op = { OP_CADASTRO, p, 0 };
+    stack_push(undo, op);
+
+    char msg[160];
+    snprintf(msg, sizeof(msg), "CADASTRO: id=%d nome=%s qtd=%d preco=%.2f", p.id, p.nome, p.qtd, p.preco);
+    hist_add(msg);
+
+    printf("Produto cadastrado.\n");
+}
+
+static void remover_produto_menu(ProdutoNode **head, Stack *undo) {
+    int id = read_int("ID do produto para remover: ");
+    Produto removed;
+
+    if (!remover_produto_por_id(head, id, &removed)) {
+        printf("Produto nao encontrado.\n");
+        return;
+    }
+
+    Operacao op = { OP_REMOCAO, removed, 0 };
+    stack_push(undo, op);
+
+    char msg[160];
+    snprintf(msg, sizeof(msg), "REMOCAO: id=%d nome=%s", removed.id, removed.nome);
+    hist_add(msg);
+
+    printf("Produto removido.\n");
+}
+
+static void buscar_produto_menu(ProdutoNode *head) {
+    int id = read_int("ID para buscar: ");
+    ProdutoNode *n = buscar_produto(head, id);
+    if (!n) { printf("Produto nao encontrado.\n"); return; }
+
+    printf("\nEncontrado:\n");
+    printf("ID: %d\nNome: %s\nQuantidade: %d\nPreco: R$ %.2f\n",
+           n->p.id, n->p.nome, n->p.qtd, n->p.preco);
+}
+
+static void entrada_estoque(ProdutoNode *head, Stack *undo) {
+    int id = read_int("ID do produto: ");
+    int qtd = read_int("Quantidade de ENTRADA: ");
+    if (qtd <= 0) { printf("Quantidade deve ser > 0.\n"); return; }
+
+    ProdutoNode *n = buscar_produto(head, id);
+    if (!n) { printf("Produto nao encontrado.\n"); return; }
+
+    Operacao op = { OP_ENTRADA, n->p, qtd };
+    stack_push(undo, op);
+
+    n->p.qtd += qtd;
+
+    char msg[160];
+    snprintf(msg, sizeof(msg), "ENTRADA: id=%d +%d (qtd=%d)", id, qtd, n->p.qtd);
+    hist_add(msg);
+
+    printf("Entrada aplicada.\n");
+}
+
+static void saida_estoque(ProdutoNode *head, Stack *undo) {
+    int id = read_int("ID do produto: ");
+    int qtd = read_int("Quantidade de SAIDA: ");
+    if (qtd <= 0) { printf("Quantidade deve ser > 0.\n"); return; }
+
+    ProdutoNode *n = buscar_produto(head, id);
+    if (!n) { printf("Produto nao encontrado.\n"); return; }
+
+    if (n->p.qtd < qtd) {
+        printf("Estoque insuficiente. Qtd atual: %d\n", n->p.qtd);
+        return;
+    }
+
+    Operacao op = { OP_SAIDA, n->p, -qtd };
+    stack_push(undo, op);
+
+    n->p.qtd -= qtd;
+
+    char msg[160];
+    snprintf(msg, sizeof(msg), "SAIDA: id=%d -%d (qtd=%d)", id, qtd, n->p.qtd);
+    hist_add(msg);
+
+    printf("Saida aplicada.\n");
+}
+
+static void atualizar_preco(ProdutoNode *head, Stack *undo) {
+    int id = read_int("ID do produto: ");
+    double novo = read_double("Novo preco: ");
+    if (novo < 0) { printf("Preco invalido.\n"); return; }
+
+    ProdutoNode *n = buscar_produto(head, id);
+    if (!n) { printf("Produto nao encontrado.\n"); return; }
+
+    Operacao op = { OP_ATUALIZA_PRECO, n->p, 0 };
+    stack_push(undo, op);
+
+    n->p.preco = novo;
+
+    char msg[160];
+    snprintf(msg, sizeof(msg), "PRECO: id=%d atualizado para %.2f", id, novo);
+    hist_add(msg);
+
+    printf("Preco atualizado.\n");
+}
+
+
+// Estrutura da Fila para pedidos
+
+static void criar_pedido_menu(Queue *q) {
+    Pedido p;
+    p.produto_id = read_int("ID do produto: ");
+    p.qtd = read_int("Quantidade: ");
+    if (p.produto_id <= 0 || p.qtd <= 0) { printf("Pedido invalido.\n"); return; }
+
+    int t = read_int("Tipo (1=VENDA / 2=REPOSICAO): ");
+    p.tipo = (t == 2) ? PED_REPOSICAO : PED_VENDA;
+
+    enqueue(q, p);
+
+    char msg[160];
+    snprintf(msg, sizeof(msg), "PEDIDO ENFILEIRADO: %s id=%d qtd=%d",
+             (p.tipo == PED_VENDA ? "VENDA" : "REPOSICAO"),
+             p.produto_id, p.qtd);
+    hist_add(msg);
+
+    printf("Pedido adicionado na fila. Tamanho: %d\n", q->size);
+}
+
+static void listar_fila(const Queue *q) {
+    printf("\n=== FILA DE PEDIDOS (FIFO) ===\n");
+    if (queue_empty(q)) { printf("(vazia)\n"); return; }
+
+    const QueueNode *cur = q->front;
+    int i = 1;
+    while (cur) {
+        printf("%2d) %s | id=%d | qtd=%d\n",
+               i,
+               (cur->ped.tipo == PED_VENDA ? "VENDA" : "REPOSICAO"),
+               cur->ped.produto_id,
+               cur->ped.qtd);
+        cur = cur->next;
+        i++;
+    }
+}
+
+static void processar_proximo_pedido(Queue *q, ProdutoNode *head, Stack *undo) {
+    Pedido p;
+    if (!dequeue(q, &p)) { printf("Fila vazia.\n"); return; }
+
+    ProdutoNode *n = buscar_produto(head, p.produto_id);
+    if (!n) {
+        printf("Pedido descartado: produto id=%d nao existe.\n", p.produto_id);
+        return;
+    }
+
+    if (p.tipo == PED_VENDA) {
+        if (n->p.qtd < p.qtd) {
+            printf("Venda NAO processada (estoque insuficiente). Qtd atual: %d\n", n->p.qtd);
+            return;
+        }
+        Operacao op = { OP_SAIDA, n->p, -p.qtd };
+        stack_push(undo, op);
+
+        n->p.qtd -= p.qtd;
+
+        char msg[160];
+        snprintf(msg, sizeof(msg), "PROCESSADO (VENDA): id=%d -%d (qtd=%d)", p.produto_id, p.qtd, n->p.qtd);
+        hist_add(msg);
+
+        printf("Pedido de VENDA processado.\n");
+    } else {
+        Operacao op = { OP_ENTRADA, n->p, p.qtd };
+        stack_push(undo, op);
+
+        n->p.qtd += p.qtd;
+
+        char msg[160];
+        snprintf(msg, sizeof(msg), "PROCESSADO (REPOSICAO): id=%d +%d (qtd=%d)", p.produto_id, p.qtd, n->p.qtd);
+        hist_add(msg);
+
+        printf("Pedido de REPOSICAO processado.\n");
+    }
+}
+
+static void desfazer_ultima(ProdutoNode **head, Stack *undo) {
+    Operacao op;
+    if (!stack_pop(undo, &op)) { printf("Nada para desfazer.\n"); return; }
+
+    if (op.tipo == OP_CADASTRO) {
+        Produto tmp;
+        if (remover_produto_por_id(head, op.snapshot.id, &tmp)) {
+            char msg[160];
+            snprintf(msg, sizeof(msg), "UNDO: desfez CADASTRO (removeu id=%d)", op.snapshot.id);
+            hist_add(msg);
+            printf("Desfeito: cadastro removido.\n");
+        } else {
+            printf("UNDO falhou: produto nao encontrado.\n");
+        }
+        return;
+    }
+
+    if (op.tipo == OP_REMOCAO) {
+        // Reinsere como era, sem duplicado (mas aqui ID já deveria estar livre)
+        if (inserir_produto_o1_sem_duplicado(head, op.snapshot)) {
+            char msg[160];
+            snprintf(msg, sizeof(msg), "UNDO: desfez REMOCAO (reinsert id=%d)", op.snapshot.id);
+            hist_add(msg);
+            printf("Desfeito: produto reinserido.\n");
+        } else {
+            printf("UNDO falhou: nao reinseriu (ID duplicado?).\n");
+        }
+        return;
+    }
+
+    // Movimentações / preço: restaura snapshot
+    ProdutoNode *n = buscar_produto(*head, op.snapshot.id);
+    if (!n) { printf("UNDO falhou: produto nao encontrado.\n"); return; }
+
+    n->p = op.snapshot;
+
+    char msg[160];
+    snprintf(msg, sizeof(msg), "UNDO: restaurou estado do produto id=%d (qtd=%d preco=%.2f)",
+             n->p.id, n->p.qtd, n->p.preco);
+    hist_add(msg);
+
+    printf("Desfeito: estado restaurado.\n");
+}
+
+
+// Estrutura do Menu de Operações 
+
+static void print_menu(void) {
+    printf("\n========== SISTEMA DE ESTOQUE ==========\n");
+    printf("1) Cadastrar produto\n");
+    printf("2) Listar produtos (ordenado por ID)\n");
+    printf("3) Buscar produto por ID\n");
+    printf("4) Remover produto\n");
+    printf("5) Entrada de estoque\n");
+    printf("6) Saida de estoque\n");
+    printf("7) Atualizar preco\n");
+    printf("8) Criar pedido (entra na FILA)\n");
+    printf("9) Listar fila de pedidos\n");
+    printf("10) Processar proximo pedido (FIFO)\n");
+    printf("11) Desfazer ultima operacao (PILHA/UNDO)\n");
+    printf("12) Ver historico (ARRAY)\n");
+    printf("0) Sair\n");
+}
+
+int main(void) {
+    ProdutoNode *estoque = NULL;
+    Stack undo;
+    Queue fila;
+
+    stack_init(&undo);
+    queue_init(&fila);
+
+    int opc;
+    do {
+        print_menu();
+        opc = read_int("Escolha: ");
+
+        switch (opc) {
+            case 1:  cadastrar_produto(&estoque, &undo); break;
+            case 2:  listar_estoque_ordenado(estoque); break;
+            case 3:  buscar_produto_menu(estoque); break;
+            case 4:  remover_produto_menu(&estoque, &undo); break;
+            case 5:  entrada_estoque(estoque, &undo); break;
+            case 6:  saida_estoque(estoque, &undo); break;
+            case 7:  atualizar_preco(estoque, &undo); break;
+            case 8:  criar_pedido_menu(&fila); break;
+            case 9:  listar_fila(&fila); break;
+            case 10: processar_proximo_pedido(&fila, estoque, &undo); break;
+            case 11: desfazer_ultima(&estoque, &undo); break;
+            case 12: hist_print(); break;
+            case 0:  break;
+            default: printf("Opcao invalida.\n"); break;
+        }
+    } while (opc != 0);
+
+    // limpeza (malloc/free)
+    liberar_estoque(&estoque);
+    stack_clear(&undo);
+    queue_clear(&fila);
+
+    printf("Encerrado.\n");
+    return 0;
+}
