@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
 #define NAME_MAX 64
 #define HIST_MAX 200
@@ -34,48 +33,123 @@ typedef struct {
     int delta_qtd;
 } Operacao;
 
-ProdutoNode *estoque = NULL;
+// Estrutura da Pilha 
 
-ProdutoNode* criar_no(Produto p){
-    ProdutoNode *novo = (ProdutoNode*) malloc(sizeof(ProdutoNode));
-    if(!novo){
-        printf("Erro de memoria!\n");
-        exit(1);
-    }
-    novo->p = p;
-    novo->next = NULL;
-    return novo;
+typedef struct StackNode {
+    Operacao op;
+    struct StackNode *next;
+} StackNode;
+
+typedef struct {
+    StackNode *top;
+    int tamanho;
+} Stack;
+
+static void stack_init (Stack *s) {
+    s -> top = NULL;
+    s -> tamanho = 0;
 }
 
-void inserir_produto(Produto p){
-    ProdutoNode *novo = criar_no(p);
-    novo->next = estoque;
-    estoque = novo;
+static int stack_empty (const Stack *s, Operacao op){
+    return s -> top == NULL;
 }
 
-ProdutoNode* buscar_produto(int id){
-    ProdutoNode *aux = estoque;
-    while(aux){
-        if(aux->p.id == id)
-            return aux;
-        aux = aux->next;
-    }
-    return NULL;
+static void stack_push (Stack *s, Operacao op) {
+    StackNode *n = (StackNode*) malloc(sizeof(StackNode));
+
+    if (!n) {
+        printf ("Erro: sem memória\n");
+        return;
+      }
+    n -> op = op;
+    n -> next = s -> top;
+    s -> top = n;
+    s -> tamanho++;
 }
 
-void listar_estoque(){
-    ProdutoNode *aux = estoque;
-    if(!aux){
-        printf("Estoque vazio.\n");
+static int stack_pop (Stack *s, Operacao *out) {
+    if (s -> top == NULL)
+    return 0;
+
+    StackNode *t = s-> top;
+    *out = t -> op;
+    s -> top = t-> next;
+    free(t);
+    s-> tamanho--;
+    return 1;
+}
+
+static void stack_clear (Stack *s) {
+    Operacao tmp;
+    while (stack_pop(s, &tmp)) {}
+}
+
+//Estrutura da fila - Funcao Pedidos
+
+typedef enum {
+    PED_VENDA = 1,
+    PED_REPOSICAO = 2
+} TipoPedido;
+
+typedef struct {
+    int produto_id;
+    int qtd;
+    TipoPedido tipo;
+} Pedido;
+
+typedef struct QueueNode {
+    Pedido ped ; 
+    struct QueueNode *next;
+} QueueNode;
+
+typedef struct {
+    QueueNode *inicio;
+    QueueNode *fim;
+    int tamanho;
+} Queue;
+
+static void queue_init (Queue *q) {
+    q -> inicio = q -> fim = NULL;
+    q -> tamanho = 0;
+}
+
+static int queue_empty (const Queue *q) {
+    return q-> inicio == NULL;
+}
+
+static void enqueue (Queue *q, Pedido p) {
+    QueueNode *n = (QueueNode*)malloc(sizeof(QueueNode));
+
+    if (!n) {
+        printf("Erro: Sem memória\n");
         return;
     }
+    n -> ped = p;
+    n -> next = NULL;
 
-    while(aux){
-        printf("ID: %d | Nome: %s | Qtd: %d | Preco: %.2lf\n",
-               aux->p.id,
-               aux->p.nome,
-               aux->p.qtd,
-               aux->p.preco);
-        aux = aux->next;
-    }
+    if (q -> fim) q ->fim->next = n;
+    else q->inicio = n;
+    q -> tamanho++;
+}
+
+static int dequeue (Queue *q, Pedido *out) {
+
+    if (queue_empty(q)) 
+    return 0;
+
+    QueueNode *f = q-> inicio;
+    *out = f -> ped;
+    q -> inicio = f -> next;
+    if (!q -> inicio)
+    q -> fim = NULL;
+
+    free (f);
+    q-> tamanho--;
+    return 1;
+}
+
+static void queue_clear (Queue *q) {
+    Pedido tmp; 
+    while (dequeue(q, &tmp)) {}
+
 }
